@@ -5,7 +5,9 @@ from langchain.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 import os
 
-CHROMA_PATH = "chroma"
+from langchain_postgres import PGVector
+from sqlalchemy import create_engine
+
 
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -19,20 +21,27 @@ Answer the question based only on the following context. If you don't know the a
 Answer the question based on the above context: {question}
 """
 
-def main():
+def connect_to_db():
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=openai_api_key)
-    db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
-
+    connection = "postgresql+psycopg://postgres:020104@localhost:5432/Vector"
+    engine = create_engine(connection, future=True)
+    db = PGVector(
+        embeddings=embeddings,
+        collection_name="Vector",
+        connection=engine
+    )
+    return db
+def response(question):
+    db = connect_to_db()
     prompt_template = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
-    query = "Hai khả năng cốt lõi giúp phát triển trong nền kinh tế mới là gì?"
-
-    results = db.similarity_search_with_score(query, k=5)
+    results = db.similarity_search_with_score(question, k=5)
     context_text = "\n\n---\n\n".join([result.page_content for result, _score in results])
-    prompt = prompt_template.format(context=context_text, question=query)
-
+    prompt = prompt_template.format(context=context_text, question=question)
     llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, openai_api_key=openai_api_key)
     response = llm.invoke(prompt)
-    print(response.content)
+    return response.content
+def main():
+    print(response("Hai khả năng cốt lõi giúp phát triển trong nền kinh tế mới là gì?"))
 
 if __name__ == "__main__":
     main()

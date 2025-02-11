@@ -4,4 +4,6 @@ langchain-community
 pypdf
 langchain_openai 
 langchain-chroma 
+langchain_postgres
 chromadb
+streamlit
