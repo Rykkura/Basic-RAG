@@ -1,12 +1,11 @@
-from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
-# from langchain_community.vectorstores import Chroma
-from langchain_chroma import Chroma
-from langchain_postgres import PGVector
+
+from openai import OpenAI
+import psycopg2
+from psycopg2.extras import execute_values
+from pgvector.psycopg2 import register_vector
 from dotenv import load_dotenv
 import os
-from sqlalchemy import create_engine
+from pypdf import PdfReader
     
 
 pdf_folder = "../Docs"
@@ -14,15 +13,25 @@ CHROMA_PATH = "../chroma"
 
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=openai_api_key)
+def load_documents(directory_path):
+    print("==== Loading documents from directory ====")
+    documents = []
+    for filename in os.listdir(directory_path):
+        if filename.endswith(".pdf"):
+            pdf_path = os.path.join(directory_path, filename)
+            reader = PdfReader(pdf_path)
+            text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+            documents.append({"text": text})
+    return documents
 
-def load_pdf(pdf_folder):
-    loader = DirectoryLoader(pdf_folder, glob="*.pdf", loader_cls=PyPDFLoader)
-    docs = loader.load()
-    return docs
-
-def split_docs(docs):
-    text__splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100, separators=["\n", ". "])
-    chunks = text__splitter.split_documents(docs)
+def split_docs(text, chunk_size=1000, chunk_overlap=100):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start = end - chunk_overlap
     return chunks
 
 # def save_to_db(chunks):
@@ -35,20 +44,50 @@ def split_docs(docs):
 #     print(f"Saved {len(chunks)} chunks to {CHROMA_PATH}.")
     return db
 
-def save_to_db(chunks):
+def save_to_db(docs):
+    conn = psycopg2.connect(
+        dbname="Vector",
+        user="postgres",
+        password="020104",
+        host="localhost",
+        port="5432"
+    )
+    cur = conn.cursor()
+    register_vector(conn)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS embeddings (
+            id SERIAL PRIMARY KEY,
+            vector vector(1536),  
+            content TEXT NOT NULL,
+            dimension INT NOT NULL 
+        )
+    """)
+    conn.commit()
+    texts = [doc["text"] for doc in docs]
+    response = client.embeddings.create(input=texts, model="text-embedding-3-small")
+    embeddings = [item.embedding for item in response.data]
+    for doc, embedding in zip(docs, embeddings):
+        doc["embedding"] = embedding
     
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=openai_api_key)
-    connection = "postgresql+psycopg://postgres:020104@localhost:5432/Vector"
-    engine = create_engine(connection, future=True)
-    collection_name = "Vector"
-    db = PGVector.from_documents(documents=chunks, embedding=embeddings, collection_name=collection_name, connection=engine)
-    return db
-
+    insert_query = """
+    INSERT INTO embeddings (vector, content, dimension)
+    VALUES %s
+    """
+    data_to_insert = [
+    (embedding, doc["text"], len(embedding)) for doc, embedding in zip(docs, embeddings)
+    ]
+    execute_values(cur, insert_query, data_to_insert)
+    conn.commit()
 
 def main():
-    docs = load_pdf(pdf_folder)
-    chunks = split_docs(docs)
-    save_to_db(chunks)
+    docs = load_documents(pdf_folder)
+    chunked_documents = []
+    for doc in docs:
+        chunks = split_docs(doc['text'])
+        print("==== Splitting docs into chunks ====")
+        for i, chunk in enumerate(chunks):
+            chunked_documents.append({id: i, "text": chunk})
+    save_to_db(chunked_documents)
     
 
 
