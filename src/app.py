@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-from indexing import load_pdf, split_docs, save_to_db
+from indexing import load_documents, split_docs, save_to_db
 from query_data import response
 UPLOAD_FOLDER = "../Docs"
 
@@ -18,7 +18,7 @@ def get_question():
     return question
 
 def save_docs_to_db():
-    docs = load_pdf(UPLOAD_FOLDER)
+    docs = load_documents(UPLOAD_FOLDER)
     chunks = split_docs(docs)
     save_to_db(chunks)
 
