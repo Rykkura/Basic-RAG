@@ -1,9 +1,7 @@
 python-dotenv
-langchain
-langchain-community
 pypdf
-langchain_openai 
-langchain-chroma 
-langchain_postgres
-chromadb
+pypdf
 streamlit
+psycopg2-binary 
+pgvector
+openai
