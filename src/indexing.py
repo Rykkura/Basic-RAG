@@ -78,7 +78,8 @@ def save_to_db(docs):
     ]
     execute_values(cur, insert_query, data_to_insert)
     conn.commit()
-
+    cur.execute("CREATE INDEX ON embeddings USING hnsw (vector vector_cosine_ops)")
+    conn.commit()
 def main():
     docs = load_documents(pdf_folder)
     chunked_documents = []
